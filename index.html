@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>个人工资记录</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;font-family:system-ui, sans-serif;}
+body{background:#f5f7fa;padding:16px;color:#222;max-width:560px;margin:0 auto;}
+.card{background:#fff;border-radius:14px;padding:18px;margin-bottom:14px;box-shadow:0 2px 8px #00000012;}
+h2{font-size:18px;margin-bottom:16px;text-align:center;color:#333;}
+.row{margin-bottom:12px;}
+label{display:block;margin-bottom:6px;font-size:14px;color:#444;}
+input{width:100%;padding:10px;border:1px solid #ddd;border-radius:8px;font-size:16px;}
+.btn{width:100%;padding:11px;border:none;border-radius:8px;background:#2b78e4;color:#fff;font-size:16px;margin-top:8px;}
+.btn-del{background:#e53e3e;}
+.sum-box{background:#e8f0fe;padding:14px;border-radius:10px;text-align:center;margin-bottom:14px;}
+.sum-text{font-size:16px;}
+.sum-num{font-size:24px;font-weight:bold;color:#2b78e4;margin-top:4px;}
+.list-item{display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid #eee;}
+.date-col{color:#555;}
+.money-col{font-weight:bold;}
+.del-small{color:red;font-size:13px;padding-left:8px;cursor:pointer;}
+.empty-tip{text-align:center;color:#999;padding:20px;}
+</style>
+</head>
+<body>
+<div class="card">
+  <h2>录入当日工资</h2>
+  <div class="row">
+    <label>日期</label>
+    <input type="date" id="inpDate">
+  </div>
+  <div class="row">
+    <label>当日工资（元）</label>
+    <input type="number" step="0.01" id="inpMoney" placeholder="例如：268.5">
+  </div>
+  <button class="btn" onclick="addRecord()">保存记录</button>
+</div>
+
+<div class="sum-box">
+  <div class="sum-text">当前账期（每月26日~次月25日）累计工资</div>
+  <div class="sum-num" id="totalShow">0.00 元</div>
+  <div style="font-size:13px;color:#666;margin-top:6px;" id="periodShow"></div>
+</div>
+
+<div class="card">
+  <h2>工资记录列表（按日期升序）</h2>
+  <div id="listWrap"></div>
+</div>
+
+<div class="card">
+  <button class="btn btn-del" onclick="clearAll()">清空全部记录（谨慎！）</button>
+</div>
+
+<script>
+// 读取本地存储
+let recordList = JSON.parse(localStorage.getItem("wageRecords")) || [];
+
+// 获取当前账期：26号 ~ 次月25号
+function getPeriodInfo(inputDate){
+  let d = new Date(inputDate);
+  let y = d.getFullYear();
+  let m = d.getMonth();
+  let day = d.getDate();
+  let startMonth, startYear, endMonth, endYear;
+  if(day >=26){
+    // 本月26号之后，账期：本月26 ~ 下月25
+    startMonth = m;
+    startYear = y;
+    endMonth = m+1;
+    endYear = y;
+  }else{
+    // 25号及之前：上月26 ~ 本月25
+    startMonth = m-1;
+    startYear = y;
+    endMonth = m;
+    endYear = y;
+  }
+  // 跨年份处理（1月的时候，上月是去年12月）
+  if(startMonth < 0){
+    startMonth = 11;
+    startYear -=1;
+  }
+  if(endMonth >11){
+    endMonth = 0;
+    endYear +=1;
+  }
+  const startStr = `${startYear}-${String(startMonth+1).padStart(2,'0')}-26`;
+  const endStr = `${endYear}-${String(endMonth+1).padStart(2,'0')}-25`;
+  return {startStr, endStr};
+}
+
+// 判断一条记录是否属于当前查看的账期
+function isInPeriod(dateStr){
+  const p = getPeriodInfo(new Date());
+  return dateStr >= p.startStr && dateStr <= p.endStr;
+}
+
+// 新增记录
+function addRecord(){
+  const dateVal = document.getElementById("inpDate").value;
+  const moneyVal = parseFloat(document.getElementById("inpMoney").value);
+  if(!dateVal || isNaN(moneyVal) || moneyVal <=0){
+    alert("请填写正确日期和工资金额！");
+    return;
+  }
+  // 新增记录
+  recordList.push({date:dateVal,money:moneyVal});
+  // 按日期排序（补录旧数据自动排好）
+  recordList.sort((a,b)=> new Date(a.date) - new Date(b.date));
+  saveData();
+  render();
+  // 清空输入框
+  document.getElementById("inpMoney").value = "";
+}
+
+// 保存到本地存储
+function saveData(){
+  localStorage.setItem("wageRecords", JSON.stringify(recordList));
+}
+
+// 删除单条记录
+function delOne(idx){
+  if(!confirm("确定删除这条记录？")) return;
+  recordList.splice(idx,1);
+  saveData();
+  render();
+}
+
+// 清空全部
+function clearAll(){
+  if(!confirm("⚠️ 全部工资记录会被删除，无法恢复！确定吗？")) return;
+  recordList = [];
+  saveData();
+  render();
+}
+
+// 渲染页面
+function render(){
+  // 计算当前账期总和
+  let sum = 0;
+  recordList.forEach(item=>{
+    if(isInPeriod(item.date)) sum += item.money;
+  })
+  const p = getPeriodInfo(new Date());
+  document.getElementById("totalShow").innerText = sum.toFixed(2)+" 元";
+  document.getElementById("periodShow").innerText = `账期：${p.startStr} ～ ${p.endStr}`;
+
+  // 渲染列表
+  const wrap = document.getElementById("listWrap");
+  if(recordList.length ===0){
+    wrap.innerHTML = `<div class="empty-tip">暂无工资记录</div>`;
+    return;
+  }
+  let html = "";
+  recordList.forEach((item,idx)=>{
+    html += `
+    <div class="list-item">
+      <span class="date-col">${item.date}</span>
+      <span>
+        <span class="money-col">${item.money.toFixed(2)} 元</span>
+        <span class="del-small" onclick="delOne(${idx})">删除</span>
+      </span>
+    </div>
+    `
+  })
+  wrap.innerHTML = html;
+}
+
+// 默认日期：今天
+function setDefaultDate(){
+  const now = new Date();
+  const tzOffset = now.getTimezoneOffset() * 60000;
+  const localISOTime = (new Date(now - tzOffset)).toISOString().slice(0,10);
+  document.getElementById("inpDate").value = localISOTime;
+}
+
+// 初始化
+setDefaultDate();
+render();
+</script>
+</body>
+</html>
+<!-- （注：内容由AI生成） -->
